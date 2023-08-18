@@ -1,5 +1,6 @@
 // Copyright (c) 2023 Apple Inc. Licensed under MIT License.
 
+import AsyncHTTPClient
 import XCTest
 @testable import AppStoreServerLibrary
 
@@ -214,6 +215,6 @@ final class SignedDataVerifierTests: XCTestCase {
     }
     
     private func getChainVerifier(base64EncodedRootCertificate: String) -> ChainVerifier {
-        return try! ChainVerifier(rootCertificates: [Data(base64Encoded: base64EncodedRootCertificate)!])
+        return try! ChainVerifier(rootCertificates: [Data(base64Encoded: base64EncodedRootCertificate)!], httpClient: HTTPClient(eventLoopGroupProvider: .singleton), timeout: .seconds(60))
     }
 }
