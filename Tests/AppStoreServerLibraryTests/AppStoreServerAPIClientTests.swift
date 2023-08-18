@@ -520,7 +520,7 @@ final class AppStoreServerAPIClientTests: XCTestCase {
         private var requestOverride: ((HTTPClientRequest, Foundation.Data?) throws -> HTTPClientResponse)?
         
         public init(signingKey: String, keyId: String, issuerId: String, bundleId: String, environment: Environment, requestOverride: @escaping (HTTPClientRequest, Foundation.Data?) throws -> HTTPClientResponse) throws {
-            try super.init(signingKey: signingKey, keyId: keyId, issuerId: issuerId, bundleId: bundleId, environment: environment)
+            try super.init(signingKey: signingKey, keyId: keyId, issuerId: issuerId, bundleId: bundleId, environment: environment, httpClient: HTTPClient(eventLoopGroupProvider: .singleton), timeout: .seconds(60))
             self.requestOverride = requestOverride
         }
         
