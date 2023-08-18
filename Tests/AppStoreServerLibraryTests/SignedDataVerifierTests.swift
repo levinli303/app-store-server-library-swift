@@ -1,5 +1,6 @@
 // Copyright (c) 2023 Apple Inc. Licensed under MIT License.
 
+import AsyncHTTPClient
 import XCTest
 @testable import AppStoreServerLibrary
 
@@ -135,7 +136,7 @@ final class SignedDataVerifierTests: XCTestCase {
     }
     
     public func testWrongBundleIdForTransaction() async {
-        let verifier: SignedDataVerifier = try! SignedDataVerifier(rootCertificates: [Data(base64Encoded: ROOT_CA_BASE64_ENCODED)!], bundleId: "com.example.x", appAppleId: 1234, environment: Environment.sandbox, enableOnlineChecks: false)
+        let verifier: SignedDataVerifier = try! SignedDataVerifier(rootCertificates: [Data(base64Encoded: ROOT_CA_BASE64_ENCODED)!], bundleId: "com.example.x", appAppleId: 1234, environment: Environment.sandbox, enableOnlineChecks: false, httpClient: HTTPClient(eventLoopGroupProvider: .singleton), timeout: .seconds(60))
         let transactionResult = await verifier.verifyAndDecodeTransaction(signedTransaction: TRANSACTION_INFO)
         switch transactionResult {
         case .valid(_):
@@ -146,7 +147,7 @@ final class SignedDataVerifierTests: XCTestCase {
     }
     
     public func testWrongEnvironmentForServerNotification() async {
-        let verifier: SignedDataVerifier = try! SignedDataVerifier(rootCertificates: [Data(base64Encoded: ROOT_CA_BASE64_ENCODED)!], bundleId: "com.example", appAppleId: 1234, environment: Environment.production, enableOnlineChecks: false)
+        let verifier: SignedDataVerifier = try! SignedDataVerifier(rootCertificates: [Data(base64Encoded: ROOT_CA_BASE64_ENCODED)!], bundleId: "com.example", appAppleId: 1234, environment: Environment.production, enableOnlineChecks: false, httpClient: HTTPClient(eventLoopGroupProvider: .singleton), timeout: .seconds(60))
         let notificationResult = await verifier.verifyAndDecodeNotification(signedPayload: TEST_NOTIFICATION)
         switch notificationResult {
         case .valid(_):
@@ -201,10 +202,10 @@ final class SignedDataVerifierTests: XCTestCase {
     }
 
     private func getChainVerifier(base64EncodedRootCertificate: String) -> ChainVerifier {
-        return try! ChainVerifier(rootCertificates: [Data(base64Encoded: base64EncodedRootCertificate)!])
+        return try! ChainVerifier(rootCertificates: [Data(base64Encoded: base64EncodedRootCertificate)!], httpClient: HTTPClient(eventLoopGroupProvider: .singleton), timeout: .seconds(60))
     }
     
     private func getSignedDataVerifier() -> SignedDataVerifier {
-        return try! SignedDataVerifier(rootCertificates: [Data(base64Encoded: ROOT_CA_BASE64_ENCODED)!], bundleId: "com.example", appAppleId: 1234, environment: Environment.sandbox, enableOnlineChecks: false)
+        return try! SignedDataVerifier(rootCertificates: [Data(base64Encoded: ROOT_CA_BASE64_ENCODED)!], bundleId: "com.example", appAppleId: 1234, environment: Environment.sandbox, enableOnlineChecks: false, httpClient: HTTPClient(eventLoopGroupProvider: .singleton), timeout: .seconds(60))
     }
 }

@@ -6,6 +6,7 @@ import JWTKit
 import AsyncHTTPClient
 import NIOHTTP1
 import NIOFoundationCompat
+import NIOCore
 
 public class AppStoreServerAPIClient {
     
@@ -20,19 +21,21 @@ public class AppStoreServerAPIClient {
     private let bundleId: String
     private let url: String
     private let client: HTTPClient
+    private let timeout: TimeAmount
     ///Create an App Store Server API client
     ///
     ///- Parameter signingKey: Your private key downloaded from App Store Connect
     ///- Parameter issuerId: Your issuer ID from the Keys page in App Store Connect
     ///- Parameter bundleId: Your app’s bundle ID
     ///- Parameter environment: The environment to target
-    public init(signingKey: String, keyId: String, issuerId: String, bundleId: String, environment: Environment) throws {
+    public init(signingKey: String, keyId: String, issuerId: String, bundleId: String, environment: Environment, httpClient: HTTPClient, timeout: TimeAmount) throws {
         self.signingKey = try P256.Signing.PrivateKey(pemRepresentation: signingKey)
         self.keyId = keyId
         self.issuerId = issuerId
         self.bundleId = bundleId
         self.url = environment == Environment.production ? AppStoreServerAPIClient.productionUrl : AppStoreServerAPIClient.sandboxUrl
-        self.client = .init()
+        self.client = httpClient
+        self.timeout = timeout
     }
     
     deinit {
@@ -70,7 +73,7 @@ public class AppStoreServerAPIClient {
                 urlRequest.headers.add(name: "Content-Type", value: "application/json")
             }
             
-            let response = try await self.client.execute(urlRequest, timeout: .seconds(30))
+            let response = try await self.client.execute(urlRequest, timeout: timeout)
             var body = try await response.body.collect(upTo: 1024 * 1024)
             guard let data = body.readData(length: body.readableBytes) else {
                 throw APIFetchError()
