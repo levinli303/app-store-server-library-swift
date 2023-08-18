@@ -1,5 +1,6 @@
 // Copyright (c) 2023 Apple Inc. Licensed under MIT License.
 
+import AsyncHTTPClient
 import Foundation
 @testable import AppStoreServerLibrary
 
@@ -19,7 +20,7 @@ public class TestingUtility {
     }
     
     public static func getSignedDataVerifier(_ environment: Environment, _ bundleId: String, _ appAppleId: Int64) -> SignedDataVerifier {
-        return try! SignedDataVerifier(rootCertificates: [readBytes("resources/certs/testCA.der")], bundleId: bundleId, appAppleId: appAppleId, environment: environment, enableOnlineChecks: false)
+        return try! SignedDataVerifier(rootCertificates: [readBytes("resources/certs/testCA.der")], bundleId: bundleId, appAppleId: appAppleId, environment: environment, enableOnlineChecks: false, httpClient: HTTPClient(eventLoopGroupProvider: .singleton), timeout: .seconds(60))
     }
     
     public static func getSignedDataVerifier(_ environment: Environment, _ bundleId: String) -> SignedDataVerifier {
