@@ -1,6 +1,7 @@
 // Copyright (c) 2023 Apple Inc. Licensed under MIT License.
-
+import AsyncHTTPClient
 import Foundation
+import NIOCore
 ///A verifier and decoder class designed to decode signed data from the App Store.
 public struct SignedDataVerifier {
     
@@ -16,11 +17,11 @@ public struct SignedDataVerifier {
     /// - Parameter environment: The server environment, either sandbox or production.
     /// - Parameter enableOnlineChecks: Whether to enable revocation checking and check expiration using the current date
     /// - Throws: When the root certificates are malformed
-    public init(rootCertificates: [Foundation.Data], bundleId: String, appAppleId: Int64?, environment: Environment, enableOnlineChecks: Bool) throws {
+    public init(rootCertificates: [Foundation.Data], bundleId: String, appAppleId: Int64?, environment: Environment, enableOnlineChecks: Bool, httpClient: HTTPClient, timeout: TimeAmount) throws {
         self.bundleId = bundleId
         self.appAppleId = appAppleId
         self.environment = environment
-        self.chainVerifier = try ChainVerifier(rootCertificates: rootCertificates)
+        self.chainVerifier = try ChainVerifier(rootCertificates: rootCertificates, httpClient: httpClient, timeout: timeout)
         self.enableOnlineChecks = enableOnlineChecks
     }
     /// Verifies and decodes a signedRenewalInfo obtained from the App Store Server API, an App Store Server Notification, or from a device

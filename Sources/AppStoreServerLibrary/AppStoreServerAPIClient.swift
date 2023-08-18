@@ -1,11 +1,10 @@
 // Copyright (c) 2023 Apple Inc. Licensed under MIT License.
 
+import AsyncHTTPClient
 import Foundation
 import Crypto
 import JWTKit
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
+import NIOCore
 
 public class AppStoreServerAPIClient {
     
@@ -19,73 +18,63 @@ public class AppStoreServerAPIClient {
     private let issuerId: String
     private let bundleId: String
     private let url: String
+    private let httpClient: HTTPClient
+    private let timeout: TimeAmount
     ///Create an App Store Server API client
     ///
     ///- Parameter signingKey: Your private key downloaded from App Store Connect
     ///- Parameter issuerId: Your issuer ID from the Keys page in App Store Connect
     ///- Parameter bundleId: Your app’s bundle ID
     ///- Parameter environment: The environment to target
-    public init(signingKey: String, keyId: String, issuerId: String, bundleId: String, environment: Environment) throws {
+    public init(signingKey: String, keyId: String, issuerId: String, bundleId: String, environment: Environment, httpClient: HTTPClient, timeout: TimeAmount) throws {
         self.signingKey = try P256.Signing.PrivateKey(pemRepresentation: signingKey)
         self.keyId = keyId
         self.issuerId = issuerId
         self.bundleId = bundleId
         self.url = environment == Environment.production ? AppStoreServerAPIClient.productionUrl : AppStoreServerAPIClient.sandboxUrl
+        self.httpClient = httpClient
+        self.timeout = timeout
     }
     
     private func makeRequest<T: Encodable>(path: String, method: String, queryParameters: [String: [String]], body: T?) async -> APIResult<Foundation.Data> {
         do {
+            var urlComponents = URLComponents(string: self.url)!
+            urlComponents.path = path
             var queryItems: [URLQueryItem] = []
             for (parameter, values) in queryParameters {
                 for val in values {
                     queryItems.append(URLQueryItem(name: parameter, value: val))
                 }
             }
-            var urlComponents = URLComponents(string: self.url)
-            urlComponents?.path = path
-            urlComponents?.queryItems = queryItems
-            
-            guard let url = urlComponents?.url else {
-                return APIResult.failure(statusCode: nil, apiError: nil, causedBy: nil)
-            }
-            
-            var urlRequest = URLRequest(url: url)
+            urlComponents.queryItems = queryItems
+            var request = HTTPClientRequest(url: urlComponents.url!.absoluteString)
+
             let token = try generateToken()
-            urlRequest.setValue(AppStoreServerAPIClient.userAgent, forHTTPHeaderField: "User-Agent")
-            urlRequest.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
-            urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
-            urlRequest.httpMethod = method
-            
+            request.headers.replaceOrAdd(name: "User-Agent", value: AppStoreServerAPIClient.userAgent)
+            request.headers.replaceOrAdd(name: "Authorization", value: "Bearer " + token)
+            request.headers.replaceOrAdd(name: "Accept", value: "application/json")
+            request.method = .init(rawValue: method)
+
             if let b = body {
                 let jsonEncoder = JSONEncoder()
                 jsonEncoder.dateEncodingStrategy = .millisecondsSince1970
                 let encodedBody = try jsonEncoder.encode(b)
-                urlRequest.httpBody = encodedBody
-                urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.body = .bytes(encodedBody)
+                request.headers.replaceOrAdd(name: "Content-Type", value: "application/json")
             }
-            let (data, response) = try await withCheckedThrowingContinuation() { (c: CheckedContinuation<(Foundation.Data, URLResponse), Error>) in
-                let urlSessionDataTask = URLSession.shared.dataTask(with: urlRequest) {data, response, error in
-                    if let e = error {
-                        c.resume(throwing: e)
-                        return
-                    }
-                    guard let r = response else {
-                        c.resume(throwing: APIFetchError())
-                        return
-                    }
-                    c.resume(returning: (data ?? Foundation.Data(), r))
-                }
-                urlSessionDataTask.resume()
+            let response = try await httpClient.execute(request, timeout: timeout)
+
+            var data = Foundation.Data()
+            for try await buffer in response.body {
+                data.append(contentsOf: buffer.readableBytesView)
             }
-            guard let httpResponse = response as? HTTPURLResponse else {
-                return APIResult.failure(statusCode: nil, apiError: nil, causedBy: nil)
-            }
-            if httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 {
+
+            if response.status.code >= 200 && response.status.code < 300 {
                 return APIResult.success(response: data)
             } else if let decodedBody = try? JSONDecoder().decode(ErrorPayload.self, from: data), let errorCode = decodedBody.errorCode, let apiError = APIError.init(rawValue: errorCode) {
-                return APIResult.failure(statusCode: httpResponse.statusCode, apiError: apiError, causedBy: nil)
+                return APIResult.failure(statusCode: response.status.code, apiError: apiError, causedBy: nil)
             } else {
-                return APIResult.failure(statusCode: httpResponse.statusCode, apiError: nil, causedBy: nil)
+                return APIResult.failure(statusCode: response.status.code, apiError: nil, causedBy: nil)
             }
         } catch (let error) {
             return APIResult.failure(statusCode: nil, apiError: nil, causedBy: error)
@@ -312,7 +301,7 @@ public class AppStoreServerAPIClient {
 
 public enum APIResult<T> {
     case success(response: T)
-    case failure(statusCode: Int?, apiError: APIError?, causedBy: Error?)
+    case failure(statusCode: UInt?, apiError: APIError?, causedBy: Error?)
 }
 
 public enum APIError: Int64 {

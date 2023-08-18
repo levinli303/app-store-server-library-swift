@@ -1,13 +1,12 @@
 // Copyright (c) 2023 Apple Inc. Licensed under MIT License.
 
+import AsyncHTTPClient
 import Foundation
 import X509
 import SwiftASN1
 import JWTKit
 import Crypto
-#if canImport(FoundationNetworking)
-import FoundationNetworking
-#endif
+import NIOCore
 
 struct ChainVerifier {
     
@@ -16,10 +15,15 @@ struct ChainVerifier {
     private static let EXPECTED_ALGORITHM = "ES256"
     
     private var store: CertificateStore
-    
-    init(rootCertificates: [Foundation.Data]) throws {
+
+    private let httpClient: HTTPClient
+    private let timeout: TimeAmount
+
+    init(rootCertificates: [Foundation.Data], httpClient: HTTPClient, timeout: TimeAmount) throws {
         let parsedCertificates = try rootCertificates.map { try Certificate(derEncoded: [UInt8]($0)) }
         store = CertificateStore(parsedCertificates)
+        self.httpClient = httpClient
+        self.timeout = timeout
     }
     
     func verify<T: DecodedSignedData>(signedData: String, type: T.Type, onlineVerification: Bool) async -> VerificationResult<T> where T: Decodable {
@@ -89,7 +93,7 @@ struct ChainVerifier {
             AppStoreOIDPolicy()
         ]
         if online {
-            policies.append(OCSPVerifierPolicy(failureMode: OCSPFailureMode.hard, requester: Requester(), validationTime: Date()))
+            policies.append(OCSPVerifierPolicy(failureMode: OCSPFailureMode.hard, requester: Requester(httpClient: httpClient, timeout: timeout), validationTime: Date()))
         }
         var verifier = Verifier(rootCertificates: self.store, policy: PolicySet(policies: policies))
         let intermediateStore = CertificateStore([intermediate])
@@ -150,28 +154,26 @@ final class AppStoreOIDPolicy: VerifierPolicy {
 }
 
 final class Requester: OCSPRequester {
+    private let httpClient: HTTPClient
+    private let timeout: TimeAmount
+
+    init(httpClient: HTTPClient, timeout: TimeAmount) {
+        self.httpClient = httpClient
+        self.timeout = timeout
+    }
+
     func query(request: [UInt8], uri: String) async throws -> [UInt8] {
-        let url = URL(string: uri)!
-        var urlRequest = URLRequest(url: url)
-        urlRequest.httpMethod = "POST"
-        urlRequest.setValue("application/ocsp-request", forHTTPHeaderField: "Content-Type")
-        urlRequest.httpBody = Foundation.Data(request)
-        
-        let data: Foundation.Data = try await withCheckedThrowingContinuation() { c in
-            let urlSessionDataTask = URLSession.shared.dataTask(with: urlRequest) {data, response, error in
-                if let e = error {
-                    c.resume(throwing: e)
-                    return
-                }
-                guard let unwrappedData = data else {
-                    c.resume(throwing: OCSPFetchError())
-                    return
-                }
-                c.resume(returning: unwrappedData)
-            }
-            urlSessionDataTask.resume()
+        var req = HTTPClientRequest(url: uri)
+        req.headers.replaceOrAdd(name: "Content-Type", value: "application/ocsp-request")
+        req.method = .POST
+        req.body = .bytes(request)
+        let response = try await httpClient.execute(req, timeout: timeout)
+
+        var data = Foundation.Data()
+        for try await buffer in response.body {
+            data.append(contentsOf: buffer.readableBytesView)
         }
-        
+
         return [UInt8](data)
     }
     
